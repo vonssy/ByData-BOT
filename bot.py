@@ -156,8 +156,8 @@ class ByData:
 
                 return None
     
-    async def task_lists(self, address: str, category: str, proxy=None, retries=5):
-        url = f"{self.base_url}/social/{address}?category={category}"
+    async def task_lists(self, address: str, proxy=None, retries=5):
+        url = f"{self.base_url}/social/actions/{address}"
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
@@ -174,7 +174,7 @@ class ByData:
                 return None
     
     async def complete_tasks(self, address: str, task_id: str, proxy=None, retries=5):
-        url = f"{self.base_url}/social/complete"
+        url = f"{self.base_url}/social/actions/complete"
         data = json.dumps({"walletAddress":address, "id":task_id})
         headers = {
             **self.headers,
@@ -197,7 +197,7 @@ class ByData:
                 return None
     
     async def claim_tasks(self, address: str, task_id: str, proxy=None, retries=5):
-        url = f"{self.base_url}/social/claim"
+        url = f"{self.base_url}/social/actions/claim"
         data = json.dumps({"walletAddress":address, "templateId":task_id})
         headers = {
             **self.headers,
@@ -252,69 +252,38 @@ class ByData:
             f"{Fore.WHITE+Style.BRIGHT} {balance} PTS {Style.RESET_ALL}"
         )
 
-        self.log(f"{Fore.CYAN+Style.BRIGHT}Task Lists:{Style.RESET_ALL}")
+        tasks = await self.task_lists(address, proxy)
+        if tasks:
+            self.log(f"{Fore.CYAN+Style.BRIGHT}Task Lists:{Style.RESET_ALL}")
+            for task in tasks:
+                if task:
+                    task_id = task["id"]
+                    title = task["title"]
+                    category = task["category"]
+                    reward = task["xpRewarded"]
+                    completed = task["completed"]
+                    claimed = task["claimed"]
 
-        for category in ["PARTNERS", "SOCIAL"]:
-            tasks = await self.task_lists(address, category, proxy)
-            if tasks:
-                for task in tasks:
-                    if task:
-                        task_id = task["id"]
-                        title = task["title"]
-                        reward = task["xpRewarded"]
-                        completed = task["completed"]
-                        claimed = task["claimed"]
+                    if completed and claimed:
+                        self.log(
+                            f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                            f"{Fore.YELLOW+Style.BRIGHT} Already Completed {Style.RESET_ALL}"
+                        )
+                        continue
 
-                        if completed and claimed:
+                    elif not completed and not claimed:
+                        complete = await self.complete_tasks(address, task_id, proxy)
+                        if complete and complete.get("completed"):
                             self.log(
                                 f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
                                 f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
                                 f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
                                 f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                f"{Fore.YELLOW+Style.BRIGHT} Already Completed {Style.RESET_ALL}"
+                                f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
                             )
-                            continue
-
-                        elif not completed and not claimed:
-                            complete = await self.complete_tasks(address, task_id, proxy)
-                            if complete and complete.get("completed"):
-                                self.log(
-                                    f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                    f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                    f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
-                                )
-                                claim = await self.claim_tasks(address, task_id, proxy)
-                                if claim and claim.get("claimed"):
-                                    self.log(
-                                        f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                        f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                        f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
-                                        f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                                        f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
-                                    )
-                                else:
-                                    self.log(
-                                        f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                        f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                        f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
-                                    )
-                            else:
-                                self.log(
-                                    f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                    f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                    f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
-                                )
-
-                        elif completed and not claimed:
                             claim = await self.claim_tasks(address, task_id, proxy)
                             if claim and claim.get("claimed"):
                                 self.log(
@@ -335,12 +304,42 @@ class ByData:
                                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                                     f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
                                 )
+                        else:
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
+                            )
 
-            else:
-                self.log(
-                    f"{Fore.BLUE+Style.BRIGHT}   > {category} Tasks{Style.RESET_ALL}"
-                    f"{Fore.RED+Style.BRIGHT} Data Is None {Style.RESET_ALL}"
-                )
+                    elif completed and not claimed:
+                        claim = await self.claim_tasks(address, task_id, proxy)
+                        if claim and claim.get("claimed"):
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
+                                f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                                f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
+                            )
+                        else:
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
+                            )
+
+        else:
+            self.log(
+                f"{Fore.CYAN+Style.BRIGHT}Task Lists:{Style.RESET_ALL}"
+                f"{Fore.RED+Style.BRIGHT} Data Is None {Style.RESET_ALL}"
+            )
 
     async def main(self):
         try:
