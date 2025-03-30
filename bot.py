@@ -13,6 +13,7 @@ wib = pytz.timezone('Asia/Jakarta')
 
 class ByData:
     def __init__(self) -> None:
+        self.base_url = "https://ultra-api.bydata.app/v1"
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -133,7 +134,7 @@ class ByData:
                 print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2 or 3).{Style.RESET_ALL}")
     
     async def user_login(self, address: str, proxy=None, retries=5):
-        url = "https://pro-api.bydata.app/v1/users"
+        url = f"{self.base_url}/users"
         data = json.dumps({"walletAddress":address, "referredCode":self.ref_code})
         headers = {
             **self.headers,
@@ -156,7 +157,7 @@ class ByData:
                 return None
     
     async def task_lists(self, address: str, category: str, proxy=None, retries=5):
-        url = f"https://pro-api.bydata.app/v1/social/{address}?category={category}"
+        url = f"{self.base_url}/social/{address}?category={category}"
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
@@ -173,7 +174,7 @@ class ByData:
                 return None
     
     async def complete_tasks(self, address: str, task_id: str, proxy=None, retries=5):
-        url = "https://pro-api.bydata.app/v1/social/complete"
+        url = f"{self.base_url}/social/complete"
         data = json.dumps({"walletAddress":address, "id":task_id})
         headers = {
             **self.headers,
@@ -196,7 +197,7 @@ class ByData:
                 return None
     
     async def claim_tasks(self, address: str, task_id: str, proxy=None, retries=5):
-        url = "https://pro-api.bydata.app/v1/social/claim"
+        url = f"{self.base_url}/social/claim"
         data = json.dumps({"walletAddress":address, "templateId":task_id})
         headers = {
             **self.headers,
