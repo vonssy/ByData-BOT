@@ -164,7 +164,7 @@ class ByData:
                 async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
                     async with session.get(url=url, headers=self.headers) as response:
                         response.raise_for_status()
-                        result =  await response.json()
+                        result = await response.json()
                         return result["socialActions"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
