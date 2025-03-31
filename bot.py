@@ -165,7 +165,7 @@ class ByData:
                     async with session.get(url=url, headers=self.headers) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result["socialActions"]
+                        return result["data"]["socialActions"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
@@ -188,7 +188,7 @@ class ByData:
                     async with session.post(url=url, headers=headers, data=data) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result["socialAction"]
+                        return result["data"]["socialAction"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
@@ -211,7 +211,7 @@ class ByData:
                     async with session.post(url=url, headers=headers, data=data) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result["socialAction"]
+                        return result["data"]["socialAction"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
