@@ -144,7 +144,7 @@ class ByData:
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=300)) as session:
                     async with session.post(url=url, headers=headers, data=data) as response:
                         response.raise_for_status()
                         result = await response.json()
@@ -161,11 +161,11 @@ class ByData:
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=300)) as session:
                     async with session.get(url=url, headers=self.headers) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result["data"]["socialActions"]
+                        return result["data"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
@@ -184,11 +184,11 @@ class ByData:
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=300)) as session:
                     async with session.post(url=url, headers=headers, data=data) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result["data"]["socialAction"]
+                        return result["data"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
@@ -207,11 +207,11 @@ class ByData:
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
-                async with ClientSession(connector=connector, timeout=ClientTimeout(total=60)) as session:
+                async with ClientSession(connector=connector, timeout=ClientTimeout(total=300)) as session:
                     async with session.post(url=url, headers=headers, data=data) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result["data"]["socialAction"]
+                        return result["data"]
             except (Exception, ClientResponseError) as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(5)
@@ -252,19 +252,27 @@ class ByData:
             f"{Fore.WHITE+Style.BRIGHT} {balance} PTS {Style.RESET_ALL}"
         )
 
-        tasks = await self.task_lists(address, proxy)
-        if tasks:
+        task_lists = await self.task_lists(address, proxy)
+        if task_lists:
             self.log(f"{Fore.CYAN+Style.BRIGHT}Task Lists:{Style.RESET_ALL}")
+
+            tasks = task_lists.get("socialActions", [])
+            if isinstance(tasks, list) and len(tasks) == 0:
+                return self.log(
+                    f"{Fore.CYAN+Style.BRIGHT}Task Lists:{Style.RESET_ALL}"
+                    f"{Fore.YELLOW+Style.BRIGHT} No Available Tasks {Style.RESET_ALL}"
+                )
+            
             for task in tasks:
                 if task:
-                    task_id = task["id"]
-                    title = task["title"]
-                    category = task["category"]
-                    reward = task["xpRewarded"]
-                    completed = task["completed"]
-                    claimed = task["claimed"]
+                    task_id = task.get("id")
+                    title = task.get("title")
+                    category = task.get("category")
+                    reward = task.get("xpRewarded")
+                    # completed = task.get("completed")
+                    claimed = task.get("claimed")
 
-                    if completed and claimed:
+                    if claimed:
                         self.log(
                             f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
                             f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
@@ -274,9 +282,10 @@ class ByData:
                         )
                         continue
 
-                    elif not completed and not claimed:
-                        complete = await self.complete_tasks(address, task_id, proxy)
-                        if complete and complete.get("completed"):
+                    complete = await self.complete_tasks(address, task_id, proxy)
+                    if complete:
+                        is_completed = complete.get("socialAction", {}).get("completed", False)
+                        if is_completed:
                             self.log(
                                 f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
                                 f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
@@ -284,18 +293,30 @@ class ByData:
                                 f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                                 f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
                             )
+                            await asyncio.sleep(1)
+
                             claim = await self.claim_tasks(address, task_id, proxy)
-                            if claim and claim.get("claimed"):
-                                self.log(
-                                    f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                    f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                    f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
-                                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                                    f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
-                                    f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
-                                )
+                            if claim:
+                                is_claimed = claim.get("socialAction", {}).get("claimed", False)
+                                if is_claimed:
+                                    self.log(
+                                        f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                        f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                        f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                        f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                        f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
+                                        f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                                        f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
+                                        f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
+                                    )
+                                else:
+                                    self.log(
+                                        f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                        f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                        f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                        f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                        f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
+                                    )
                             else:
                                 self.log(
                                     f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
@@ -304,6 +325,8 @@ class ByData:
                                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                                     f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
                                 )
+                            await asyncio.sleep(1)
+
                         else:
                             self.log(
                                 f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
@@ -312,28 +335,15 @@ class ByData:
                                 f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                                 f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
                             )
-
-                    elif completed and not claimed:
-                        claim = await self.claim_tasks(address, task_id, proxy)
-                        if claim and claim.get("claimed"):
-                            self.log(
-                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
-                                f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                                f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
-                            )
-                        else:
-                            self.log(
-                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
-                            )
+                    else:
+                        self.log(
+                            f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                            f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                            f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                            f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
+                        )
+                    await asyncio.sleep(1)
 
         else:
             self.log(
