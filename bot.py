@@ -5,15 +5,15 @@ from aiohttp import (
 )
 from aiohttp_socks import ProxyConnector
 from fake_useragent import FakeUserAgent
-from datetime import datetime
+from datetime import datetime, timezone
 from colorama import *
-import asyncio, json, os, pytz
+import asyncio, json, os, pytz, base64
 
 wib = pytz.timezone('Asia/Jakarta')
 
 class ByData:
     def __init__(self) -> None:
-        self.base_url = "https://ultra-api.bydata.app/v1"
+        self.base_url = "https://mega-api.bydata.app"
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -111,6 +111,32 @@ class ByData:
     def mask_account(self, account):
         mask_account = account[:6] + '*' * 6 + account[-6:]
         return mask_account
+    
+    def generate_salt(self, id: str):
+        s = ["zuHtvmKPS3Wsj4hZbq62af", "hXEGaMzuVcf7R85HgvKSW9", "Mr2KZGkJyfRxUe9LaHACVw"]
+        now = datetime.now(timezone.utc)
+        today = now.strftime("%Y-%m-%d")
+        index = now.day % len(s)
+        return "qtA6LcU9JXTmuHMbD3GRea" + today + s[index] + id[:8]
+
+    def encrypt_id(self, id: str):
+        if not id:
+            return ""
+        salt = self.generate_salt(id)
+        reversed_e = id[::-1]
+        combined = f"{reversed_e}:{salt}"
+        encoded = base64.b64encode(combined.encode()).decode()
+        safe_encoded = encoded.replace("+", "-").replace("/", "_").replace("=", ".")
+        return f"bd-{safe_encoded}"
+
+    def is_valid_url(self, id: str):
+        if not id:
+            return ""
+        return id if id.startswith("bd-") else self.encrypt_id(id)
+
+    def generate_encrypted_id(self, id: str):
+        encrypted_id = self.is_valid_url(id)
+        return encrypted_id
         
     def print_question(self):
         while True:
@@ -134,7 +160,7 @@ class ByData:
                 print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2 or 3).{Style.RESET_ALL}")
     
     async def user_login(self, address: str, proxy=None, retries=5):
-        url = f"{self.base_url}/users"
+        url = f"{self.base_url}/v1/users"
         data = json.dumps({"walletAddress":address, "referredCode":self.ref_code})
         headers = {
             **self.headers,
@@ -156,8 +182,8 @@ class ByData:
 
                 return None
     
-    async def task_lists(self, address: str, proxy=None, retries=5):
-        url = f"{self.base_url}/social/actions/{address}"
+    async def task_lists(self, encrypted_user_id: str, proxy=None, retries=5):
+        url = f"{self.base_url}/v1/social/actions/{encrypted_user_id}"
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
@@ -173,9 +199,9 @@ class ByData:
 
                 return None
     
-    async def complete_tasks(self, address: str, task_id: str, proxy=None, retries=5):
-        url = f"{self.base_url}/social/actions/complete"
-        data = json.dumps({"walletAddress":address, "id":task_id})
+    async def complete_tasks(self, encrypted_user_id: str, encrypted_task_id: str, proxy=None, retries=5):
+        url = f"{self.base_url}/v1/social/actions/complete"
+        data = json.dumps({"userId":encrypted_user_id, "templateId":encrypted_task_id})
         headers = {
             **self.headers,
             "Content-Length": str(len(data)),
@@ -196,9 +222,9 @@ class ByData:
 
                 return None
     
-    async def claim_tasks(self, address: str, task_id: str, proxy=None, retries=5):
-        url = f"{self.base_url}/social/actions/claim"
-        data = json.dumps({"walletAddress":address, "templateId":task_id})
+    async def claim_tasks(self, encrypted_user_id: str, encrypted_task_id: str, proxy=None, retries=5):
+        url = f"{self.base_url}/v1/social/actions/claim"
+        data = json.dumps({"userId":encrypted_user_id, "templateId":encrypted_task_id})
         headers = {
             **self.headers,
             "Content-Length": str(len(data)),
@@ -245,6 +271,8 @@ class ByData:
             f"{Fore.GREEN+Style.BRIGHT} Login Success {Style.RESET_ALL}"
         )
 
+        user_id = user["id"]
+        encrypted_user_id = self.generate_encrypted_id(user_id)
         balance = user["totalXP"]
             
         self.log(
@@ -252,7 +280,7 @@ class ByData:
             f"{Fore.WHITE+Style.BRIGHT} {balance} PTS {Style.RESET_ALL}"
         )
 
-        task_lists = await self.task_lists(address, proxy)
+        task_lists = await self.task_lists(encrypted_user_id, proxy)
         if task_lists:
             self.log(f"{Fore.CYAN+Style.BRIGHT}Task Lists:{Style.RESET_ALL}")
 
@@ -269,10 +297,12 @@ class ByData:
                     title = task.get("title")
                     category = task.get("category")
                     reward = task.get("xpRewarded")
-                    # completed = task.get("completed")
+                    completed = task.get("completed")
                     claimed = task.get("claimed")
 
-                    if claimed:
+                    encrypted_task_id = self.generate_encrypted_id(task_id)
+
+                    if completed and claimed:
                         self.log(
                             f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
                             f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
@@ -282,33 +312,42 @@ class ByData:
                         )
                         continue
 
-                    complete = await self.complete_tasks(address, task_id, proxy)
-                    if complete:
-                        is_completed = complete.get("socialAction", {}).get("completed", False)
-                        if is_completed:
-                            self.log(
-                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
-                            )
-                            await asyncio.sleep(1)
+                    if not completed and not claimed:
+                        complete = await self.complete_tasks(encrypted_user_id, encrypted_task_id, proxy)
+                        if complete:
+                            is_completed = complete.get("socialAction", {}).get("completed", False)
+                            if is_completed:
+                                self.log(
+                                    f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                    f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                    f"{Fore.GREEN+Style.BRIGHT} Completed {Style.RESET_ALL}"
+                                )
+                                await asyncio.sleep(1)
 
-                            claim = await self.claim_tasks(address, task_id, proxy)
-                            if claim:
-                                is_claimed = claim.get("socialAction", {}).get("claimed", False)
-                                if is_claimed:
-                                    self.log(
-                                        f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                                        f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                        f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
-                                        f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
-                                        f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
-                                        f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
-                                    )
+                                claim = await self.claim_tasks(encrypted_user_id, encrypted_task_id, proxy)
+                                if claim:
+                                    is_claimed = claim.get("socialAction", {}).get("claimed", False)
+                                    if is_claimed:
+                                        self.log(
+                                            f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                            f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                            f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                            f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                            f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
+                                            f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                                            f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
+                                            f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
+                                        )
+                                    else:
+                                        self.log(
+                                            f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                            f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                            f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                            f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                            f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
+                                        )
                                 else:
                                     self.log(
                                         f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
@@ -317,16 +356,16 @@ class ByData:
                                         f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                                         f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
                                     )
+                                await asyncio.sleep(1)
+
                             else:
                                 self.log(
                                     f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
                                     f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
                                     f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
                                     f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                                    f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
+                                    f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
                                 )
-                            await asyncio.sleep(1)
-
                         else:
                             self.log(
                                 f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
@@ -335,15 +374,40 @@ class ByData:
                                 f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
                                 f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
                             )
-                    else:
-                        self.log(
-                            f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
-                            f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
-                            f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
-                            f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
-                            f"{Fore.RED+Style.BRIGHT} Not Completed {Style.RESET_ALL}"
-                        )
-                    await asyncio.sleep(1)
+                        await asyncio.sleep(1)
+
+                    elif completed and not claimed:
+                        claim = await self.claim_tasks(encrypted_user_id, encrypted_task_id, proxy)
+                        if claim:
+                            is_claimed = claim.get("socialAction", {}).get("claimed", False)
+                            if is_claimed:
+                                self.log(
+                                    f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                    f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                    f"{Fore.GREEN+Style.BRIGHT} Claimed {Style.RESET_ALL}"
+                                    f"{Fore.MAGENTA+Style.BRIGHT}-{Style.RESET_ALL}"
+                                    f"{Fore.CYAN+Style.BRIGHT} Reward {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{reward} PTS{Style.RESET_ALL}"
+                                )
+                            else:
+                                self.log(
+                                    f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                    f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                    f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                    f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
+                                )
+                        else:
+                            self.log(
+                                f"{Fore.CYAN+Style.BRIGHT}      > {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{category}{Style.RESET_ALL}"
+                                f"{Fore.MAGENTA+Style.BRIGHT} - {Style.RESET_ALL}"
+                                f"{Fore.WHITE+Style.BRIGHT}{title}{Style.RESET_ALL}"
+                                f"{Fore.RED+Style.BRIGHT} Not Claimed {Style.RESET_ALL}"
+                            )
+                        await asyncio.sleep(1)
 
         else:
             self.log(
